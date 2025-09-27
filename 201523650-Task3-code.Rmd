@@ -1,0 +1,152 @@
+---
+title: "Applied Statistics and Probability Assignment 1 - Task 3"
+author: "Louis Cooke"
+date: "2024-12-10"
+output:
+  pdf_document:
+    citation_package: biblatex
+bibliography: Task3references.bib
+csl: ieee.csl
+biblatexoptions: sorting=none
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("xts")
+install.packages("urca")
+install.packages("tseries")
+install.packages("forecast")
+install.packages("fGarch")
+```
+
+```{r, include=FALSE}
+library(xts)
+library(urca)
+library(tseries)
+library(forecast)
+library(fGarch)
+library(fBasics)
+```
+
+# Task 3:
+In this final part we will analyse the Forex close data over a twelve year period which includes the 2008 financial crisis. The volatility will be measured during the period leading up to the crisis and the period after. Suitable time series models will be used to investigate this.
+
+*Note: Much of the code throughout has been referenced from the Times Series - Part 2-3 slides, November 2024 available on Minerva* \cite{Hernandez}
+
+## 1).
+
+For this task we will handle the data from "USD-CSV.csv" alongside the formatting for the dates. To examine the change in the exchange rate volatility before and after the credit crisis, we can plot the timeseries to first visualise the data.
+
+Then we can use the sample variance formula with the log returns at specific regions in the data set to estimate the changes in volatility before and after the 2008 financial crisis.
+
+```{r, fig.width=5, fig.height=3}
+# Before running ensure that USD-GBP.csv is in the same file location as this workspace.
+
+forex_data <- read.csv("USD-GBP.csv")
+reformatted_dates <- as.Date(forex_data$Date, format="%d/%m/%Y")
+forex_timeseries <- xts(forex_data$USD.GBP.Close, 
+                        order.by = reformatted_dates)
+forex_data$Date <- reformatted_dates
+
+plot(forex_timeseries, main = "Time Series Plot", 
+     xlab = "Date", ylab = "Value", col = "red")
+```
+
+Similar to Task 2, before we compute a timeseries, we need to reformat the dates so that xts() recognises the dates, we do this using the as.Dates() function again and set the format argumenmt accordingly \cite{bobbitt2021}. xts() was used again for the flexibility of the model, being able to deal with irregularities eg. holidays and non-trading days.
+
+Now we need to compare the volatility before and after the financial crisis, to do this we will select 39 months of data before the crisis (starting from May 2004 ending in July 31st 2007). Then selecting 39 months of data after the crisis (starting from August 1st 2007 ending in November 2010.
+
+We will then calculate the volatility using the standard deviation of log returns in these periods, calculated by: $$\sigma = \sqrt{\frac{1}{n-1} \sum_{i=1}^{n} \left(lr_i - \bar{lr} \right)^2}$$ where $lr_i = \ln\frac{X_i}{X_{i-1}}$ and $\bar{lr} = \frac{1}{n}\sum_{i=1}^{n} lr_i$. For both periods we can use the diff() function to easily compute $lr_i$ \cite{mffap} which is then used to calculate the standard deviation.
+
+```{r}
+forex_data_pre <- forex_data$USD.GBP.Close[which(forex_data$Date == "2004-04-30") 
+: which(forex_data$Date == "2007-07-31")] 
+
+# we chose 30th day of April instead of 1st of may
+# as the 1st was not a trading day.
+
+forex_data_post <- forex_data$USD.GBP.Close[which(forex_data$Date == "2007-08-01") 
+: which(forex_data$Date == "2010-11-01")]
+
+log_returns_pre <- c(diff(log(forex_data_pre)))
+log_returns_post <- c(diff(log(forex_data_post)))
+
+volatility_pre <- sd(log_returns_pre)
+volatility_post <- sd(log_returns_post)
+```
+
+The standard deviation before the 2008 financial crisis was `r volatility_pre` and after the financial crisis it increased to `r volatility_post`
+
+We will now determine the volatility using a suitable model, to find the correct model we need to compute the time-series Y-data and the time-series squared Y-data behaviour, using this we can conduct tests to narrow down which model might be best:
+
+*If the Y-data behaves like a white noise and the Y-data squared behaves like an AR(1) then we can model using an ARCH(1).*
+
+*If the PACF of the Y-data squared is an AR(q) then we try an ARCH(q).*
+
+*If the ACF and PACF of Y-data squared suggest and ARMA model, then a GARCH might work*
+
+We can test if it is an ARCH(1) model if the Y-data behaves like a white noise, and the Y-data squared behaves like an AR(1). For a white noise test we can use the Ljung-Box test, and test for if the p-value is greater than 5%. If the p-value is greater than 5% we cannot reject the null hypothesis and the data can be considered a white noise. \cite{BrownNoiseRadio}
+
+```{r, echo=TRUE, results='hide'}
+Yt_pre <- forex_data_pre
+Yt_post <- forex_data_post
+
+Yt_pre_sqr <- forex_data_pre^2
+Yt_post_sqr <- forex_data_post^2
+
+Box.test(Yt_pre, type = "Ljung-Box")
+Box.test(Yt_post, type = "Ljung-Box")
+```
+
+For both tests the p-value was much less than 5% so we cannot assume that the data is a white noise, hence it it not an ARCH(1) model. Now we will try the PACF and ACF of both to asses what model is best.
+
+```{r, fig.width=5, fig.height=3}
+pacf(Yt_pre_sqr)
+pacf(Yt_post_sqr)
+
+acf(Yt_pre_sqr, lag.max = 100)
+acf(Yt_post_sqr, lag.max = 100)
+```
+
+From the plots we observe that the PACF drops off dramatically at lag = 1 with no significant increase after, and for both the ACF decreases geometrically which implies a MA component in the squared Y-values. This suggests that the model does not behave like an ARMA, as we would observe an ACF similar to a AR(p) (geometric decrease) and a PACF similar to a MA(q) (geometric decrease), hence the likely model is an ARCH. We can fit the ARCH and GARCH models using the arguments garch(p, q) to change between the two \cite{garch}. We will assess the AIC, BIC, SIC and HQIC for the models to confirm which is better (will display the AIC for the final value in the code).
+
+```{r}
+arch_model_pre <- garchFit(~ garch(1, 0), 
+                           data = Yt_pre, trace = FALSE)
+garch_model_pre <- garchFit(~ garch(1, 1), 
+                            data = Yt_pre, trace = FALSE)
+
+arch_model_post <- garchFit(~ garch(1, 0), 
+                           data = Yt_post, trace = FALSE)
+garch_model_post <- garchFit(~ garch(1, 1), 
+                            data = Yt_post, trace = FALSE)
+
+AIC_arch_pre <- arch_model_pre@fit$ics["AIC"]
+AIC_garch_pre <- garch_model_pre@fit$ics["AIC"]
+
+AIC_arch_post <- arch_model_post@fit$ics["AIC"]
+AIC_garch_post <- garch_model_post@fit$ics["AIC"]
+```
+
+All of the specific information criteria suggested that the ARCH model is more suitable for the data we are modelling, the ARCH model AIC for the pre crisis data was `r AIC_arch_pre` and for the GARCH `r AIC_garch_pre`. For the post crisis data the AIC and SIC suggested that the GARCH was better (ARCH model AIC for the post crisis data was: `r AIC_arch_post` and GARCH model AIC: `r AIC_garch_post`). The BIC and HQIC suggested the ARCH was better, in all cases the values were very similar, so we will model the post crisis data using an ARCH model to keep consistency with our models.
+
+```{r, fig.width=5, fig.height=3}
+plot(arch_model_pre, which = 2)
+plot(arch_model_post, which = 2)
+```
+
+The first plot produced shows that the pre-crisis volatility, starting from May 2004 to May 2006 was relatively stable, although the volatility changed a lot in this period it deviated about a mean value. After May 2006 the prices started to spike all the way up til July 2007 where the growing 'bubble' starts to appear.
+
+The second plot initially shows a large spike where the conditional SD reached 0.4, which represents price spikes just before the time where the 'bubble burst'. This period of high volatility continued for around 7 and a half months, representing the period of highly unstable prices just before the crash in September 2008, where the volatility dropped again. Prices remained volatile for about 100 days after this before they started to level off again.
+
+These changes in volatility are representative of the volatility calculated earlier where the overall volatility was higher after the credit crisis in August 2007.
+
+
+## 2).
+
+The volatility in the period leading up to the financial crisis in 2008 was lower than the overall volatility after the crisis. Firstly by assessing the time-series plot of the prices in this 12 year period, it can be seen that volatility in prices was relatively low from May 2004 to May 2006. It was after, when the prices spiked that the volatility increased, but this period was relatively short in comparison to the period we measured across. To compare the two periods of volatility, a period of 39 months was examined, one leading up to, and the other following the 2008 financial crisis (assuming that the crisis happened in a single day). This period was used because it represents enough data to give an accurate estimate for the volatility, whilst localising the time period to a range in which the housing crisis affected volatility. By using the standard deviation of log returns in this period, the standard deviation confirms that the volatility was higher in the years following the crisis than the period preceding it.
+
+However this method is a crude way of estimating volatility, because it used the standard deviation of log returns, which uses a mean log value of returns to create an estimate. This perhaps gave less accurate results because the time series we are modelling is heteroscedastic, meaning that its variance changes over time, furthermore it is not stationary meaning its mean also changes. To compare this value with a better estimate, the time series was modelled using an ARCH model, chosen by first confirming that the price data was not a white noise (using the Box-Ljung test). The PACF and ACF of the squared price data suggested the behaviour was unlike an ARMA and therefore a GARCH would be unsuitable, this was confirmed by assessing the information criteria for the ARCH and GARCH models. Eventually the ARCH model was used to model the data, and the conditional standard deviation was plotted across the number of days for each of the data sets, before and after the financial crisis.

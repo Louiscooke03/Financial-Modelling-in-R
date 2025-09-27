@@ -1,0 +1,160 @@
+---
+title: "Applied Statistics and Probability Assignment 1 - Task 2"
+date: "2024-12-5"
+output:
+  pdf_document:
+    citation_package: biblatex
+bibliography: Task2references.bib
+csl: ieee.csl
+biblatexoptions: sorting=none
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+install.packages("stats")
+install.packages("readxl")
+install.packages("xts")
+install.packages("zoo")
+install.packages("lubridate")
+install.packages("tseries")
+install.packages("forecast")
+install.packages("vars")
+```
+
+```{r, include=FALSE}
+library(stats)
+library("readxl")
+library(xts)
+library(zoo)
+library(lubridate)
+library(tseries)
+library(forecast)
+library(vars)
+```
+
+# Task 2
+In this task we will implement time-series models for the Indices.xlsx file for a 150 day trading period.
+*Note: Much of the code throughout has been referenced from the Times Series- Part 2-3 slides, November 2024 available on Minerva* \cite{Hernandez}
+
+## 1).
+
+We will create a time-series data-frame, in the original data set the dates were organised in the form “Jun 3, 2011” additionally the data is taken on a 5-day work period basis (no weekends) and there is no work on boxing day So the dates need to be numerated and the irregularities need to be sorted.
+
+```{r}
+# Before running ensure that Indices.xlsx is in the same file location 
+# as this workspace, and that the file "Indices.xlsx" is not open.
+
+trading_data <- read_excel("Indices.xlsx") 
+dates <- trading_data$Date
+numbered_dates <- as.Date(dates, format="%b %d, %Y")
+day_of_yr <- yday(numbered_dates)
+trading_data$Date <- day_of_yr
+time_series_close <- xts(trading_data$Close, order.by = numbered_dates)
+```
+
+To do this the date form was converted to a simple numerical form using the format argument from the as.Date() function \cite{bobbitt2021} then the yday() function was used from the lubridate library which numbers the dates as days. \cite{Danielle} The closing price data was then plotted against the date, it is clear from the plot that the time-series is not stationary. Furthermore, because our data has inconsistencies, like a holiday on the 26th of December we use the xts() time series to compute the PACF and ACF with the corresponding dates.
+
+We will now assess this hypothesis and test what model best suits the data by determining the behaviour of the PACF and ACF using both the pacf() and acf() functions. \cite{ACFPACF}
+
+```{r, fig.width=5, fig.height=3}
+pacf(time_series_close, lag.max = 30)
+acf(time_series_close, lag.max = 30)
+```
+
+To firstly asses what model parameters suit the MA and AR models we need to observe how the ACF and PACF behave with against the lagged values. The PACF drops off significantly at lag = 1 with no significant increase in the PACF after this lag, and the ACF decreases geometrically with lag suggesting that the AR(1) is a suitable model to fit the data.
+
+For this same reason, the MA model is not suitable for our data, but we will set its parameter to 1 for when we conduct testing in the next part. Using the Augmented Dickey Fuller test we can asses whether the time series is stationary, if so we can then use the diff() function to create a differenced series.
+
+```{r, fig.width=5, fig.height=3}
+stationary_test <- adf.test(trading_data$Close)$p.value
+diff_series_close <- diff(diff(trading_data$Close))
+acf(diff_series_close, main="ACF of Differenced Series")
+pacf(diff_series_close, main="PACF of Differenced Series", lag.max=40)
+p_val_stationary <- adf.test(c(diff_series_close))$p.value
+```
+The p-value test statistic for the Augmented Dickey-Fuller test under no differencing is `r stationary_test` which is much higher than a significance level at 5% so we we do not reject the null hypothesis and we assume that the time-series is not stationary. \cite{bobbitt2021_2} The second-order differenced series had a p-value of 0.01 which is below the 5% level so we can now assume that this series is stationary. We chose to use second order differencing because under the first order there was not a clear drop off in the PACF at any lag, under the second order differencing we can see a drop off at a lag of 1.
+
+The ACF and PACF was computed for the second order differenced time series, by looking at the plots for the differenced time series we can find the point p where the PACF became insignificant, and the point q where the ACF became insignificant. We observe that after lag = 1 for the PACF there was a significant overall drop. (we can also justify for a lag value p = 3 or 4 but we don’t want to introduce overfitting). For this reason we chose p to equal 1. By observing the ACF plot there is a clear drop below the threshold at lag = 1 with no other significant increase, hence we chose q to equal 1.
+
+After the second order differenced series was computed the p-value was 0.01 which is below the 5% level so we have enough evidence to reject the null hypothesis and we can assume that the first order differenced series is stationary, so we can set the differencing parameter, d to 2 because we take the second order differencing.
+
+## 2).
+
+We will now use the AIC to determine which model works best to fit the data. The AIC ( Akaike information criterion) function has two parts that penalises larger number of arguments and rewards a larger maximum likelihood, the idea is to minimise the AIC: $$AIC = 2k - 2\ln(L^*)$$ Where $k$ is the number of parameters and $L^*$ is the maximum likelihood.
+
+```{r}
+ar_model <- arima(time_series_close, order = c(1, 0, 0))
+ma_model <- arima(time_series_close, order = c(0, 0, 1))
+arima_model <- arima(time_series_close, order = c(1, 2, 1))
+```
+The AIC from the AR model was `r AIC(ar_model)`
+
+The AIC from the MA model was `r AIC(ma_model)`
+
+The AIC from the ARIMA model was `r AIC(arima_model)`
+
+From the results it can be seen that the ARIMA model is the most suitable type to fit the data as it minimises the AIC the most. As expected the MA model did not fit at all because the PACF and the ACF did not fit the trends of the MA model.
+
+## 3).
+
+```{r}
+close_forecast <- forecast(arima_model, h = 10)
+plot(close_forecast, main = "DAX Index Forecast for the Next 10 Trading Days
+     \n Using Closing Data")
+
+residuals_close <- residuals(arima_model)
+rmse_close = sqrt(mean(residuals_close^2))
+```
+
+With the model predictions the forecasting predictions are plotted the shaded regions show the range for the maximium and minimum prices for each day at a given confidence interval. The rmse was also calculated for the ARIMA model and had a value of `r rmse_close`.
+
+## 4).
+
+In this question we will fit a VAR using all of the available data. We know that the trading data for closing prices was not stationary so now we need to check the others.
+
+```{r}
+p_val_open <- apply(trading_data, 2 , adf.test)[2]
+p_val_high <- apply(trading_data, 2 , adf.test)[3]
+p_val_low <- apply(trading_data, 2 , adf.test)[4]
+```
+
+Upon analysing the p-value for the other three variables we do not accept the null hypothesis that the trading variables are stationary. p_val_open = 0.8228, p_val_high = 0.7964 and p_val_low = 0.8641, hence we need to apply differencing to the terms and see if there is improvement.
+
+```{r}
+diff_series_open <- apply(trading_data, 2, diff)[, 2]
+diff_series_high <- apply(trading_data, 2, diff)[, 3]
+diff_series_low <- apply(trading_data, 2, diff)[, 4]
+diff_series_close2 <- apply(trading_data, 2, diff)[, 5]
+
+adf_open <- adf.test(diff_series_open)$p.value
+adf_high <- adf.test(diff_series_high)$p.value
+adf_low <- adf.test(diff_series_low)$p.value
+```
+
+After the differencing the p-value from the adf for all the variables was 0.01 which is less that 5% so we can assume that all variables are stationary now.
+
+```{r}
+diff_data <- data.frame(diff_series_open, diff_series_high, 
+                        diff_series_low, diff_series_close2)
+
+lag_sc <- VARselect(diff_data)$selection["SC(n)"]
+var_model <- VAR(diff_data, p = 1)
+residuals <- data.frame(resids = residuals(var_model)[, 4])
+
+rmse <- sqrt(mean(residuals$resids^2))
+```
+
+Based on the Schwarz Criterion from VARselect we chose the lag length p to be 1. Then the VAR model was fitted to the data, and to assess the accuracy of the VAR model we again use the residuals to find the rmse which had a value of `r rmse`.
+
+Using all of the data has therefore increased the accuracy of our predictions because the rmse has reduced using the VAR model. Additionally using more variables gives us more access to unused data so we can forecast more accurate predictions, rather than making forecasts from one variable and having to make future forecasts based on those predictions.
+
+## 5).
+
+To model the time series as a function of the closing price data given to us in this task we firstly had to find the correct model to fit the data, by using the ACF and PACF, an ARIMA(1, 2, 1) was chosen. This particular model was chosen by using the AIC, which is a function that penalises higher fitting parameters and rewards higher maximum likelihood, so it is a good information criteria to use when picking a model. The differencing term, 2 was necessary because the PACF did not indicate a clear lag point, p in which the PACF was insignificant under a differencing order of 1. Other values could have been chosen for the AR part of the ARIMA model, like p = 3 or 4, but using higher fitting parameters might introduce overfitting, and there is a clear drop off at lag = 1. The MA part was easy to deduce, there was a clear drop off at q = 1 for first and second order differencing, so we take the ARIMA(1, 2, 1) model.
+
+The 10-day forecasted data showed an overall decrease in the point forecast over the 10 day period. The confidence interval over this period had quite a large range of values for both the 80 and 95 percent level indicating a fairly large uncertainty in this forecasting. The rmse was computed for this model giving a value of `r rmse_close`
+
+For the next part we were asked to model the data using a VAR model. For the VAR model we had to convert to a stationary series which reduced the length of the data, hence we couldn’t use the dates we were using earlier so we make the assumption that there was no holidays. From the Schwarz Criterion we chose to use the lag length of p to equal 1 to reduce overfitting. We choose this because the other information criteria for higher p-values had only very small improvements in their fitting, VARselect chooses the best lag length based on the smallest of each of the different information criteria. After finding the rmse for the VAR model we can conclude that the accuracy for the VAR model is better, giving a value of `r rmse`. Furthermore as discussed above using several parameters improves the accuracy of forecasting as we have more access to unused data so we don’t have to make forecasts on predicted data.
