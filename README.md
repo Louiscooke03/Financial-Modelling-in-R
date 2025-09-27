@@ -1,4 +1,5 @@
 # Financial-Modelling-in-R
-- Assessing the dependence structure between assets in a portfolio. Look at files: ***RiskManagementCoursework1.pdf*** and ***RiskManagementCoursework1.rmd***
-    * Fit a copulas to financial data to determine the dependence and the value at risk and expected shortfall at given historical periods.
-
+- Assessing the dependence structure between assets in a portfolio. Look at files: ***RiskManagementCoursework1.pdf*** and ***RiskManagementCoursework1.Rmd***
+    * Fit copulas to financial data to determine the dependence and the value at risk and expected shortfall at given historical periods.
+- Fitting machine learning models to data in R. Look at files: ***Assignment1_learning_from_data.pdf*** and ***Assignment1_learning_from_data.Rmd***.
+    * Used classification trees, random forest, boosted trees and regression to investigate trends in different data sets. Generated predictive models to determine if customers sign long-term loans based on banking data.
