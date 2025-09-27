@@ -1,2 +1,4 @@
 # Financial-Modelling-in-R
-Developed risk models, machine learning algorithms and time-series forecasting models from financial data in R by using applied probability and statistical theory.
+- Assessing the dependence structure between assets in a portfolio. Look at files: ***RiskManagementCoursework1.pdf*** and ***RiskManagementCoursework1.rmd***
+    * Fit a copulas to financial data to determine the dependence and the value at risk and expected shortfall at given historical periods.
+
