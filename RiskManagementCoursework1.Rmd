@@ -1,0 +1,682 @@
+---
+title: "Investigating Risk Measures and Dependencies Between Assets in a Portfolio"
+author: 'Student ID: 201523650'
+date: "11/03/2025"
+output:
+  pdf_document: default
+  word_document: default
+fontsize: 11pt
+geometry: margin=3cm
+---
+\pagebreak
+
+
+# Summary
+
+In this report, we analysed 2 different risk measures $(\text{VaR}_{0.99}, \text{ES}_{99})$, through variance-covariance, historical estimation and monte-carlo method. Before calculating these risk measures, the asset price data was cleaned. Outliers were detected visually through scatter plots and systematically by marking deviations from the trend.
+
+Our risk factor changes was a five-day rolling log returns , since the data was taken over a very long period, there were missing days (weekends, holidays etc.), so this had to be accounted for when taking measures. Before finding the risk measures detailed above, the linear portfolio mean and standard deviation, had to be found for the variance-covariance method. The calculations for this are detailed in the report. The variance-covariance method made assumptions about the distribution of risk factors, while the historical estimate takes a non-parametric approach that proved to be more flexible to drastic changes in the data, and highlighted the impact on non-normality and non-linearity in asset returns when the model is stress tested.
+
+To test the dependencies between assets a copula had to be chosen, firstly a visual approach was used, it was found that the 5-day log returns were mostly t-distributed with heavy tail dependence. The parameters of this copula were estimated firstly using maximum likelihood estimate and from there the monte-carlo method was used to generate random samples in which we could generate simulated five day losses under our chosen dependence structure. The monte-carlo method offered more flexibility and dependence that fitted the historical data better.
+
+A comparison was established between methods of finding the copula parameters, with Kendall's Tau and Maximum Likelihood applied to the Gumbel and Gaussian copulas. The Kendall-Tau method yielded slightly higher correlation estimates, suggesting its robustness against outliers and ability to capture tail dependencies more effectively.
+
+
+
+# Report:
+## I).
+Outliers were found by first plotting the scatter plot of the asset price, the outliers were data points that visibly did not fit the trend of the data. Outliers were shown on the plot by creating a separate boolean column for each asset in the data frame to identify when an asset price breaks the price trend [1]. The cleaned data was then extracted by identifying the pints within the data frame that matched to `FALSE` indicating that they weren't outliers, the cleaned data was then formatted into a new data frame.
+
+![Outliers in assets 1-4, shown by the black data points.](plots/coursework1/outliersplot.png)
+
+## II).
+We first calculated the 5-day rolling difference between log asset prices and use this as our risk measure. The date in the question: 21-02-2021 is not a trading day in our cleaned data set so we will use the day 22-02-2021 instead. The purpose of the function `params()` in this question is to calculate the linear portfolio mean and standard deviation, which will be used to find the VaR and ES.
+
+We then found the stock prices of the assets on the corresponding dates in question (in this case 21/2/2023 and 10/6/2021). Then using the portfolio weights $\lambda$ and obtaining the covariance matrix $\Sigma$ of the assets on the 2 year date margin for both dates, the linear portfolio mean and standard deviation were calculated  [2]:
+
+\[
+m_{\text{lin}} = -(\lambda \cdot S) \cdot \mu
+\]
+
+\[
+\text{sd}_{\text{lin}} = \sqrt{(\lambda \cdot S) \cdot \Sigma \cdot (\lambda \cdot S)}
+\]
+
+The VaR and ES was then calculated at the alpha level with the quantile function [3]:
+\begin{itemize}
+
+    \item \textbf{Value at Risk (VaR):}
+    \begin{equation}
+    \text{VaR}_{\text{varcov}} = m_{\text{lin}} + \text{sd}_{\text{lin}} \cdot \Phi^{-1}(\alpha)
+    \end{equation}
+
+    \item \textbf{Expected Shortfall (ES):}
+    \begin{equation}
+    \text{ES}_{\text{varcov}} = m_{\text{lin}} + \text{sd}_{\text{lin}} \cdot \frac{\phi(\Phi^{-1}(\alpha))}{1 - \alpha}
+    \end{equation}
+
+\end{itemize}
+   
+## III).
+The variance-covariance method for finding VaR and ES assumes that risk factors are **i.i.d** $X \sim N(\mu,\sigma)$, and the relationship between variables in the portfolio is **linear**. We use the five day log returns as the risk factor changes throughout, by calculating the risk factor changes on a rolling-window basis eg. days 1-5, 2-6, 3-7... This means that we aren't wasting any data when calculating the VaR and ES during the time-frames.
+
+The historical method to find VaR and ES required using the `params()` function again to find the five-day losses, where n is the number of assets in the portfolio:
+
+
+\begin{equation}
+L = \sum_{i=1}^{n} \left( S \cdot \lambda \cdot \log\left(\frac{X_t^i}{X_{t-5}^i}\right) \right)
+\end{equation}
+
+
+The losses were then used to find the historical estimates for the VaR and ES [4]:
+
+\begin{itemize}
+
+   \item \textbf{Historical Value at Risk (VaR):}
+   \begin{equation}
+   \text{VaR}_{\text{historical}} = -Q_{\text{losses}}(1 - \alpha)
+   \end{equation}
+
+   \item \textbf{Historical Expected Shortfall (ES):}
+   \begin{equation}
+   \text{ES}_{\text{historical}} = -\mathbb{E}[\text{losses} \mid \text{losses} \leq Q_{\text{losses}}(1 - \alpha)]
+   \end{equation}
+   
+\end{itemize}
+
+The VaR and ES were found for both methods, and the historical estimates for VaR was lower for for both time-frames, but the ES was only lower for for the 2021-2023 time-frame. This difference is because the historical method uses historical data for the risk factor changes and an estimate for the probability distribution of the loss **based on the empirical distribution** [5]. This suggests that the risk factor changes were not exactly normally distributed, in asset 3 we see that there is an abnormal spike in the its asset price over a short period in the 2021-2023 date range, this volatile periods perhaps skewed the estimate for the ES in this time-frame.
+
+![VaR and ES for the variance-covariance and historical estimation methods](plots/coursework1/ESVAR.png)
+
+The ES for both historical and variance-covariance methods were larger in 2019-2021 suggesting that both models captured some trends that caused higher potential losses during this time.
+
+The variance-covariance approach is **simple to compute** and **easy to understand**, but in reality portfolio value is subject to extreme, non-linear change in times of financial distress, hence why the assumption of normality and non-linearity is not realistic. The historical method uses a **non-parametric method** based on the historical data which was perhaps more robust when dealing with drastic changes in the asset returns.
+
+## IV a).
+The uniform data marginals, of the five day log-returns was fit to a t-distribution using `fitdistr()` to estimate the model parameters of the t-distribution for each individual asset. The parameters of the fitted t-distribution are shown by the table:
+
+![Values for mean, scale and degrees of freedom for the assets fit under the t-distribution.](plots/coursework1/marginal_parameters_table.png)
+
+The fitted marginals suggest that a t-distribution fits assets 1, 2 and 3 well, but 4 has higher degrees of freedom suggesting that the fit may not be as suitable. The data was then standardised to transform the risk measure to scale (0, 1) and by applying the CDF of the t-distribution, it was transformed to t-marginals [6].
+
+\begin{equation}
+U = F_t\left(\frac{X - m}{S}\right)
+\end{equation}
+
+\begin{itemize}
+  
+  \item{The uniformly distributed data was converted to t marginals for plotting by applying the quantile function, to get the vector Y:}
+  \begin{equation}
+  \text{Y} = q_1(U_1), q_2(U_2), q_3(U_3).....
+  \end{equation}
+  
+\end{itemize}
+
+\pagebreak
+
+### b).
+
+![Dependence plot of each t-marginally distributed asset relative to one another.](plots/coursework1/dependenceplot.png)
+
+To test the dependence between marginals to test whether the t-distribution is a suitable distribution to fit the marginals, the dependence between each of the t-distributed parameters was plotted. From visual inspection, the dependence between asset 1-2, 1-4, and 2-4 exhibits a t-dependence.  Whereas assets 1-3 and 3-4 show a more Gaussian dependence. Since the majority of the dependence plots exhibit heavy-tail dependence, the t-copula is the best copula to fit the dependence structure between marginals.
+
+### c).
+The log-likelihood values of the four copulas below:
+
+- Gumbel copula
+- Clayton copula
+- Gaussian copula
+- t-copula
+
+Were investigated to see which one produced the best fitting of the marginals. With a maximum likelihood estimate of 322.8491 the t-copula fitted the data the best. The `fitCopula()` function was used with method "ml" for maximum likelihood, as the method to estimate the parameters of the copula [7].
+
+The t-copula was effective at modeling tail dependence. This made it suitable for modelling the financial data, where extreme events exhibit **strong dependence**. Additionally, the t-copula's flexibility, allowed it to capture both symmetric and asymmetric dependence structures, making it more adaptable than the Gumbel, Clayton, or Gaussian copulas [8].
+
+### d).
+The t-copula parameters were $\rho = 0.5232236$ and $df = 5.893256$ estimated by applying `fitCopula()` to the whole data set.
+Firstly we fit the copula to the uniformly distributed marginals, we then simulated 10000 uniformly distributed data points under the t-copula using the copula parameters $\rho$ and $df$ that were calculated under a different function, `fit.tcopula()` to calculate the copula parameters. The uniformly simulated data was then converted back to a t-distribution under the quantile trasformation `qt()`, and standardised under the historical estimates of the parameters of the original `rf_changes`, `s`, `m` and `df` to obtain the simulated 5-day losses.
+
+- *Note: We used the function `fit.tcopula()` [9] instead of the previously used `fitCopula()`, shown in part c). because `fit.tcopula()` gave more precise estimates of the marginal parameters, returning a correlation matrix instead of one correlation coefficient. However for the log  likelihood calculations `fitCopula()` was suitable and still gave similar parameter estimates as `fit.tcopula()`.*
+
+This process is essentially the reversal of the process described in equation (6):
+
+\begin{itemize}
+  
+  \item Applying the quantile to both sides:
+  \[
+  q(U) = q\left(F_t\left(\frac{X - m}{S}\right)\right)
+  \]
+  
+  \item And re-arranging for the risk factor changes (five-day losses) gives:
+  \[
+  X = q(U) \cdot S + m
+  \]
+  
+\end{itemize}
+
+Finding the five-day losses is then the same process described in equation (3), the five day losses were then used to find the VaR and ES from the monte-carlo approach. The VaR calculated by the monte-carlo method between 2021 and 2023 is 1547.845 and the ES was 1907.898. The VaR is higher than both the variance-covariance estimates and the historical estimates and the ES is lower than the historical estimate but higher than the variance covariance estimate. The monte-carlo method thewrefore exhibits higher flexibility but still captures the overall trend shown in the methods from part ii). and iii).
+
+## v a).
+
+In this part we will investigate how fitting the **Gumbell copula** using a different method (i.e. not using maximum likelihood) to fit parameters to the data affects the estimate of the copula parameters. The method we used was the **Kendell-Tau** method, denoted by `"itau"` in the `fitCopula()` function. The measure of dependence between marginals in the data for the Gumbell copula is defined by:
+
+\[
+\rho_\tau(X_i, X_j) = 1 - \frac{1}{\theta}
+\]
+
+Where the parameter of the copula $\theta$ is optimised under the Kendall-Tau ranking basis for measuring inter-marginal correlation $\rho_\tau(X_i, X_j)$. Using the maximum likelihood estimate, the estimate for the Gumbell copula parameter was 1.459702, and using the Kendalls-Tau method the estimated parameter was 1.602756. 
+
+### b).
+
+Using the same Kendalls-Tau method, we investigated how it estimated the **Gaussian copula** parameters, the measure of dependence between the marginals in the data set is defined by:
+
+\[
+\rho_\tau(X_i, X_j) = \sin\left(\frac{\pi}{2} \rho_\tau\right) [8]
+\]
+
+The relationship between $\rho$ and $\tau$ describes the overall correlation between marginals in our data. Using the maximum likelihood estimate, the estimate for the Gaussian copula parameter was 0.4885609 and using the Kendall-Tau method the estimated parameter was 0.5193983.
+
+The Kendall-Tau method calculates the parameters of the Gaussian and Gumbell copula on a **rank basis**, instead of directly calculating the coefficients from the raw data it ranks the data in numerical order by looking at where the data lies on an index basis. By comparing the ranks of the marginals with one another, the algorithm draws correlation estimates between the assets [10]. Because of this ranking property the index is considered to be **robust against outliers** [10]. The Kendall-Tau method therefore has likely interpreted the heavy tailed distribution as stronger positive correlation for the Gaussian copula and stronger upper-tail dependence for the Gumbell copula.
+
+## References:
+
+[1]	‘Introduction to dplyr’, R-project.org. [Online]. Available: https://cran.r-project.org/web/packages/dplyr/vignettes/dplyr.html. 
+
+[2] Lecture Notes: Risk Management - Jan Palczewski (pg. 19-20)
+
+[3] Practical 2: Risk Management - Jan Palczewski
+
+[4]	‘The estimation of Value at Risk and Expected Shortfall’, R-bloggers, 19-Nov-2012. [Online]. Available: https://www.r-bloggers.com/2012/11/the-estimation-of-value-at-risk-and-expected-shortfall/. 
+
+[5] Lecture Notes: Risk Management - Jan Palczewski (pg. 22)
+
+[6] Lecture Notes: Risk Management - Jan Palczewski (pg. 38)
+
+[7]	‘FitCopula function - RDocumentation’, Rdocumentation.org. [Online]. Available: https://www.rdocumentation.org/packages/copula/versions/0.99-4/topics/fitCopula. 
+
+[8]	Archive.org. [Online]. Available: https://dn720002.ca.archive.org/0/items/quant_books/Quantitative%20Risk%20Management%20-%20A.%20J.%20McNeil%2C%20R.%20Frey.pdf. 
+
+[9]	X. Zhu, ‘Calibration of Copulas’, Bookdown.org, 21-Nov-2024. [Online]. Available: https://bookdown.org/zhuxiaolin0919/ST429-R_Sessions/calibration-of-copulas.html. 
+
+[10]	Ishan, ‘Understanding Kendall’s Tau Rank Correlation’, Medium, 03-Oct-2023. [Online]. Available: https://ishanjainoffical.medium.com/understanding-kendalls-tau-rank-correlation-c959a7daea56. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+suppressPackageStartupMessages({
+  suppressWarnings({
+  library(flextable)
+  library(officer)
+  library(ggplot2)
+  library(zoo)
+  library(MASS)
+  library(copula)
+  library(tidyverse)
+  library(ggExtra)
+  library(gridExtra)
+  library(patchwork)
+  library(QRM)
+  })
+})
+
+#[DeepSeek]: used to suppress the text outputted in the pdf when knitted to pdf]
+```
+
+# Appendix:
+```{r}
+data <- read.csv("Data_Student_201523650.csv", sep=' ')
+dates <- as.Date(data$Date)
+```
+
+```{r}
+Asset1 <- data$Asset.1
+Asset2 <- data$Asset.2
+Asset3 <- data$Asset.3
+Asset4 <- data$Asset.4
+
+lambda <- c(7, 4, 108, 43)
+
+alpha <- 0.99
+
+outliers_asset1 <- Asset1 > 300 | Asset1 < 80
+data$outliers_asset1 <- outliers_asset1
+outliers1 <- data$outliers_asset1
+
+# For assets 2 and 3 we need to focus the range of dates to the period
+# where outliers are because there are points in the downward/upwards
+# trends that cross this threshold.
+
+data$outliers_asset2 <- FALSE
+asset_2_outlier_range <- Asset2[dates >= "2021-01-01" & 
+                                  dates <= "2022-06-01"] #[1]
+outliers_asset2 <- asset_2_outlier_range > 300 | asset_2_outlier_range < 100
+data$outliers_asset2[data$Date >= "2021-01-01" & 
+                       data$Date <= "2022-06-01"] <- outliers_asset2
+outliers2 <- data$outliers_asset2
+
+data$outliers_asset3 <- FALSE
+asset_3_outlier_range <- Asset3[dates >= "2021-01-01" & dates <= "2022-06-01"]
+outliers_asset3 <- asset_3_outlier_range > 150 | asset_3_outlier_range < 25
+data$outliers_asset3[data$Date >= "2021-01-01" & 
+                       data$Date <= "2022-06-01"] <- outliers_asset3
+outliers3 <- data$outliers_asset3
+
+outliers_asset4 <- Asset4 > 500 | Asset1 < 80
+data$outliers_asset4 <- outliers_asset4
+outliers4 <- data$outliers_asset4
+```
+
+
+```{r, results}
+a1_outliers <- ggplot(data, aes(x=dates, y=Asset1, color = outliers1)) +
+  geom_point(size = 1) +
+  scale_color_manual(values = c("FALSE" = "pink", "TRUE" = "black")) +
+  labs(title = "Outliers in Asset 1", x = "Date", y = "Stock Price") +
+  theme_minimal()
+
+a2_outliers <- ggplot(data, aes(x=dates, y=Asset2, color = outliers2)) +
+  geom_point(size = 1) +
+  scale_color_manual(values = c("FALSE" = "red", "TRUE" = "black")) +
+  labs(title = "Outliers in Asset 2", x = "Date", y = "Stock Price") +
+  theme_minimal()
+
+a3_outliers <- ggplot(data, aes(x=dates, y=Asset3, color = outliers3)) +
+  geom_point(size = 1) +
+  scale_color_manual(values = c("FALSE" = "green", "TRUE" = "black")) +
+  labs(title = "Outliers in Asset 3", x = "Date", y = "Stock Price") +
+  theme_minimal()
+
+a4_outliers <- ggplot(data, aes(x=dates, y=Asset4, color = outliers4)) +
+  geom_point(size = 1) +
+  scale_color_manual(values = c("FALSE" = "orange", "TRUE" = "black")) +
+  labs(title = "Outliers in Asset 4", x = "Date", y = "Stock Price") +
+  theme_minimal()
+
+outlier_plots <- (a1_outliers + a2_outliers) / (a3_outliers + a4_outliers)
+print(outlier_plots)
+ggsave("plots/coursework1/outliersplot.png", plot = outlier_plots,
+       width = 8, height = 5)
+```
+
+```{r}
+clean_data_asset1 = data.frame(dates = as.Date(data$Date[outliers1 == FALSE]), 
+                               asset_prices = data$Asset.1[outliers1 == FALSE])
+
+clean_data_asset2 = data.frame(dates = as.Date(data$Date[outliers2 == FALSE]), 
+                               asset_prices = data$Asset.2[outliers2 == FALSE])
+
+clean_data_asset3 = data.frame(dates = as.Date(data$Date[outliers3 == FALSE]), 
+                               asset_prices = data$Asset.3[outliers3 == FALSE])
+
+clean_data_asset4 = data.frame(dates = as.Date(data$Date[outliers4 == FALSE]), 
+                               asset_prices = data$Asset.4[outliers4 == FALSE])
+
+```
+
+```{r}
+rolling_5day_log_diff <- function(x) {
+  n <- length(x)
+  sapply(1:(n - 4), function(i) log(x[i + 4]) - log(x[i]))
+}
+
+params <- function(date1, date2){
+  
+  a1 <- clean_data_asset1$asset_prices
+  a2 <- clean_data_asset2$asset_prices
+  a3 <- clean_data_asset3$asset_prices
+  a4 <- clean_data_asset4$asset_prices
+  asset_prices <- cbind(a1, a2, a3, a4)
+  
+  S_date <- c(a1[which(clean_data_asset1$dates == date2)],
+              a2[which(clean_data_asset2$dates == date2)],
+              a3[which(clean_data_asset3$dates == date2)],
+              a4[which(clean_data_asset4$dates == date2)])
+  asset_value <- lambda * S_date
+  
+  indices5 <- seq(which(date1 == clean_data_asset1$dates),
+                  which(date2 == clean_data_asset1$dates))
+  
+  log_diff_a1_fiveday <- rolling_5day_log_diff(a1[indices5])
+  log_diff_a2_fiveday <- rolling_5day_log_diff(a2[indices5])
+  log_diff_a3_fiveday <- rolling_5day_log_diff(a3[indices5])
+  log_diff_a4_fiveday <- rolling_5day_log_diff(a4[indices5])
+  
+  five_day_log_returns <- cbind(log_diff_a1_fiveday,
+                                log_diff_a2_fiveday,
+                                log_diff_a3_fiveday,
+                                log_diff_a4_fiveday)
+  
+  five_day_losses <- - ((asset_value[1] * log_diff_a1_fiveday) +
+                          (asset_value[2] * log_diff_a2_fiveday) +
+                          (asset_value[3] * log_diff_a3_fiveday) +
+                          (asset_value[4] * log_diff_a4_fiveday))
+  
+  var_asset1 <- var(log_diff_a1_fiveday)
+  var_asset2 <- var(log_diff_a2_fiveday)
+  var_asset3 <- var(log_diff_a3_fiveday)
+  var_asset4 <- var(log_diff_a4_fiveday)
+  
+  cov12 <- cov(log_diff_a1_fiveday, log_diff_a2_fiveday)
+  cov13 <- cov(log_diff_a1_fiveday, log_diff_a3_fiveday)
+  cov14 <- cov(log_diff_a1_fiveday, log_diff_a4_fiveday)
+  cov23 <- cov(log_diff_a2_fiveday, log_diff_a3_fiveday)
+  cov24 <- cov(log_diff_a2_fiveday, log_diff_a4_fiveday)
+  cov34 <- cov(log_diff_a3_fiveday, log_diff_a4_fiveday)
+  
+  #[2: Lecture Notes to find sigma]  
+  sigma <- matrix(c(var_asset1, cov12, cov13, cov14, cov12, var_asset2,
+                    cov23, cov24, cov13, cov23, var_asset3, cov34, cov14,
+                    cov24, cov34, var_asset4), nrow = 4, ncol = 4)
+  
+  #[2: Lecutre Notes to find mu]
+  mu <- c(mean(log_diff_a1_fiveday), mean(log_diff_a2_fiveday),
+          mean(log_diff_a3_fiveday), mean(log_diff_a4_fiveday))
+  
+  return(list(sigma = sigma, mu = mu, five_day_losses = five_day_losses,
+              S_date = S_date, five_day_log_returns = five_day_log_returns,
+              asset_prices = asset_prices))
+}
+
+five_day_losses_date1 <- params("2021-02-22", "2023-02-21")$five_day_losses
+five_day_losses_date2 <- params("2019-06-10", "2021-06-10")$five_day_losses
+
+sigma_date1 <- params("2021-02-22", "2023-02-21")$sigma
+sigma_date2 <- params("2019-06-10", "2021-06-10")$sigma
+
+mu_date1 <- params("2021-02-22", "2023-02-21")$mu
+mu_date2 <- params("2019-06-10", "2021-06-10")$mu
+
+```
+
+
+```{r}
+varcovar <- function(S, mu, sigma){ #[3: Code adapted from practical 2]
+  m_lin <- -(lambda * S) %*% mu
+  sd_lin <- sqrt ((lambda * S) %*% sigma %*% (lambda * S))
+  
+  VaR_varcov = m_lin + sd_lin * qnorm(alpha)
+  ES_varcov = m_lin + sd_lin * dnorm(qnorm(alpha)) / (1-alpha)
+  
+  VaR_varcov_5d = VaR_varcov
+  ES_varcov_5d = ES_varcov
+  
+  return(list(VaR_varcov_5d = VaR_varcov_5d, ES_varcov_5d = ES_varcov_5d))
+}
+
+S_date1 <- params("2021-02-22", "2023-02-21")$S_date
+S_date2 <- params("2019-06-10", "2021-06-10")$S_date
+  
+VaR_varcov_date1 <- varcovar(S = S_date1, mu = mu_date1,
+                             sigma = sigma_date1)$VaR_varcov_5d
+VaR_varcov_date2 <- varcovar(S = S_date2, mu = mu_date2,
+                             sigma = sigma_date2)$VaR_varcov_5d
+
+ES_varcov_date1 <- varcovar(S = S_date1, mu = mu_date1,
+                            sigma = sigma_date1)$ES_varcov_5d
+ES_varcov_date2 <- varcovar(S = S_date2, mu = mu_date2,
+                            sigma = sigma_date2)$ES_varcov_5d
+
+cat("VaR from the variance-covariance method in 2021 to 2023 is",
+    VaR_varcov_date1, "\n",
+    "VaR from the variance-covariance method in 2019 to 2021 is",
+    VaR_varcov_date2, "\n",
+    "ES from the variance-covariance method in 2021 to 2023 is",
+    ES_varcov_date1, "\n",
+    "ES from the variance-covariance method in 2019 to 2021 is",
+    ES_varcov_date2, "\n")
+```
+
+```{r}
+VaRhistorical <- function(losses, alpha) { #[4]
+  prob <- 1 - alpha
+  historical_VaR <- -quantile(losses, prob, na.rm = TRUE)
+  return(historical_VaR)
+}
+
+EShistorical <- function(losses, alpha) { #[4]
+  prob <- 1 - alpha
+  v <- quantile(losses, prob, na.rm = TRUE)
+  ES_historical <- -mean(losses[losses <= v], na.rm = TRUE)
+  return(ES_historical)
+}
+
+VaR_historical_date1 <- VaRhistorical(five_day_losses_date1, alpha)
+VaR_historical_date2 <- VaRhistorical(five_day_losses_date2, alpha)
+ES_historical_date1 <- EShistorical(five_day_losses_date1, alpha)
+ES_historical_date2 <- EShistorical(five_day_losses_date2, alpha)
+
+cat("Historical VaR from 2021 to 2023 is", VaR_historical_date1, "\n",
+    "Historical VaR from 2019 to 2021 is", VaR_historical_date2, "\n",
+    "Historical ES from 2021 to 2023 is", ES_historical_date1, "\n",
+    "Historical ES from 2019 to 2021 is", ES_historical_date2, "\n")
+```
+
+```{r, include=FALSE, echo=FALSE}
+# Define the data for the table
+VaRES <- data.frame(
+  Metric = c("VaR from the variance-covariance method (2021-2023)", 
+             "VaR from the variance-covariance method (2019-2021)", 
+             "ES from the variance-covariance method (2021-2023)", 
+             "ES from the variance-covariance method (2019-2021)", 
+             "Historical VaR (2021-2023)", 
+             "Historical VaR (2019-2021)", 
+             "Historical ES (2021-2023)", 
+             "Historical ES (2019-2021)"),
+  Value = c(VaR_varcov_date1, VaR_varcov_date2, ES_varcov_date1, 
+           ES_varcov_date2, VaR_historical_date1, VaR_historical_date2, 
+           ES_historical_date1, ES_historical_date2)
+)
+
+rf_table <- flextable(VaRES) %>%
+  set_header_labels(
+    Metric = "Metric",
+    Value = "Value"
+  ) %>%
+  bg(bg = "white", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  autofit()
+save_as_image(rf_table, path = "plots/coursework1/ESVAR.png")
+
+```
+
+```{r}
+rf_changes <- params("2021-02-22", "2023-02-21")$five_day_log_returns
+
+# Fitting t-distribution to risk factor changes
+marginal_a1 <- suppressWarnings(fitdistr(rf_changes[,1], "t"))$estimate
+marginal_a2 <- suppressWarnings(fitdistr(rf_changes[,2], "t"))$estimate
+marginal_a3 <- suppressWarnings(fitdistr(rf_changes[,3], "t"))$estimate
+marginal_a4 <- suppressWarnings(fitdistr(rf_changes[,4], "t"))$estimate
+
+tparams_table <- data.frame(
+  Asset = c("Asset 1", "Asset 2", "Asset 3", "Asset 4"),
+  m = c(marginal_a1["m"], marginal_a2["m"], marginal_a3["m"], marginal_a4["m"]),
+  s = c(marginal_a1["s"], marginal_a2["s"], marginal_a3["s"], marginal_a4["s"]),
+  df = c(marginal_a1["df"], marginal_a2["df"], marginal_a3["df"], marginal_a4["df"])
+)
+
+print(tparams_table)
+```
+
+
+```{r, include=FALSE, echo=FALSE}
+ft <- flextable(tparams_table) %>%
+  set_header_labels(
+    Asset = "Asset",
+    m = "m",
+    s = "s",
+    df = "df"
+  ) %>%
+  bg(bg = "white", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  autofit()
+save_as_image(ft, path = "plots/coursework1/marginal_parameters_table.png")
+```
+
+```{r}
+transform_to_uniform <- function(data, params) { #[6: Lecture Notes]
+  m <- params["m"]
+  s <- params["s"]
+  df <- params["df"]
+  uniform_data <- pt((data - m) / s, df = df) # t-distribution CDF
+  return(uniform_data)
+}
+
+t_transformation <- function(data, params) {
+  m <- params["m"]
+  s <- params["s"]
+  df <- params["df"]
+  t_data <- qt(pt((data - m) / s, df = df), df = df)
+}
+
+# Transform each asset's data
+uniform_data <- data.frame(
+  unif_a1 = transform_to_uniform(rf_changes[, 1], marginal_a1),
+  unif_a2 = transform_to_uniform(rf_changes[, 2], marginal_a2),
+  unif_a3 = transform_to_uniform(rf_changes[, 3], marginal_a3),
+  unif_a4 = transform_to_uniform(rf_changes[, 4], marginal_a4)
+)
+
+t_data <- data.frame(
+  t_data1 = t_transformation(rf_changes[, 1], marginal_a1),
+  t_data2 = t_transformation(rf_changes[, 2], marginal_a2),
+  t_data3 = t_transformation(rf_changes[, 3], marginal_a3),
+  t_data4 = t_transformation(rf_changes[, 4], marginal_a4)
+)
+
+```
+
+```{r}
+p1 <- ggplot(t_data, aes(x = t_data1, y = t_data2)) +
+geom_point() +
+  coord_cartesian(xlim = c(-4, 4), ylim = c(-4, 4)) +
+  labs(title = "Dependence: A1 vs A2", x = "Asset1", y = "Asset2") +
+  theme_minimal()
+
+p2 <- ggplot(t_data, aes(x = t_data1, y = t_data3)) +
+geom_point() +
+  coord_cartesian(xlim = c(-4, 4), ylim = c(-4, 4)) +
+  labs(title = "Dependence: A1 vs A3", x = "Asset1", y = "Asset3") +
+  theme_minimal()
+
+p3 <- ggplot(t_data, aes(x = t_data1, y = t_data4)) +
+geom_point() +
+  coord_cartesian(xlim = c(-4, 4), ylim = c(-4, 4)) +
+  labs(title = "Dependence: A1 vs A4", x = "Asset1", y = "Asset4") +
+  theme_minimal()
+
+p4 <- ggplot(t_data, aes(x = t_data2, y = t_data3)) +
+geom_point() +
+  coord_cartesian(xlim = c(-4, 4), ylim = c(-4, 4)) +
+  labs(title = "Dependence: A2 vs A3", x = "Asset2", y = "Asset3") +
+  theme_minimal()
+
+p5 <- ggplot(t_data, aes(x = t_data2, y = t_data4)) +
+geom_point() +
+  coord_cartesian(xlim = c(-4, 4), ylim = c(-4, 4)) +
+  labs(title = "Dependence: A2 vs A4", x = "Asset2", y = "Asset4") +
+  theme_minimal()
+
+p6 <- ggplot(t_data, aes(x = t_data3, y = t_data4)) +
+geom_point() +
+  coord_cartesian(xlim = c(-4, 4), ylim = c(-4, 4)) +
+  labs(title = "Dependence: A3 vs A4", x = "Asset3", y = "Asset4") +
+  theme_minimal()
+
+dependence_plot <- (p1 + p2 + p3) / (p4 + p5 + p6)
+ggsave("plots/coursework1/dependenceplot.png", plot = dependence_plot,
+       width = 8, height = 5)
+
+print(dependence_plot)
+
+#[DeepSeek]: Used coord_cartesian to replace x_lim and y_lim to provide limits
+# in the plots, as using x_lim and y_lim on their own produced warnings from
+# leaving out data points
+```
+
+```{r}
+gumbel_copula <- suppressWarnings(fitCopula(gumbelCopula(dim = 4),
+                           data = uniform_data, method = "ml")) #[7]
+clayton_copula <- suppressWarnings(fitCopula(claytonCopula(dim = 4),
+                            data = uniform_data, method = "ml"))
+gauss_copula <- suppressWarnings(fitCopula(normalCopula(dim = 4),
+                          data = uniform_data, method = "ml"))
+t_copula <- suppressWarnings(fitCopula(tCopula(dim = 4),
+                                       data = uniform_data, method = "ml"))
+
+cat("The maximum log-likelihood from the gumbel copula is",
+    gumbel_copula@loglik, "\n",
+    "The maximum log-likelihood from the clayton copula is",
+    clayton_copula@loglik, "\n",
+    "The maximum log-likelihood from the gaussian copula is",
+    gauss_copula@loglik, "\n",
+    "The maximum log-likelihood from the t copula is", t_copula@loglik, "\n")
+
+```
+
+```{r}
+cat("The parameters of the t-copula are", t_copula@estimate)
+```
+
+```{r}
+fit_copulat <- fit.tcopula(uniform_data) #[8]
+set.seed(6)
+
+simulated_udata <- rcopula.t(10000,
+                             Sigma = fit_copulat$P, df = fit_copulat$nu) #[8]
+simulated_tdata <- qt(simulated_udata, df = fit_copulat$nu)
+```
+
+```{r}
+simulated_5d_log_returns_a1 <-  marginal_a1["s"] * simulated_tdata[,1] +
+  marginal_a1["m"]
+simulated_5d_log_returns_a2 <-  marginal_a2["s"] * simulated_tdata[,2] +
+  marginal_a2["m"]
+simulated_5d_log_returns_a3 <-  marginal_a3["s"] * simulated_tdata[,3] +
+  marginal_a3["m"]
+simulated_5d_log_returns_a4 <-  marginal_a4["s"] * simulated_tdata[,4] +
+  marginal_a4["m"]
+
+asset_value <- lambda * S_date1
+five_day_losses_simulated <- -((asset_value[1] * simulated_5d_log_returns_a1) +
+  (asset_value[2] * simulated_5d_log_returns_a2) +
+  (asset_value[3] * simulated_5d_log_returns_a3) +
+  (asset_value[4] * simulated_5d_log_returns_a4))
+
+print(list("The correlation matrix from the t-distribution is" = fit_copulat$P))
+cat("The degrees of freedom of the t-distribution are", fit_copulat$nu, "\n")
+
+VaR_sim <- VaRhistorical(five_day_losses_simulated, alpha)
+ES_sim <- EShistorical(five_day_losses_simulated, alpha)
+
+cat("The VaR calculated by the monte-carlo method between 2021 and 2023 is",
+    VaR_sim, "\n",
+    "The ES calculated by the monte-carlo method between 2021 and 2023 is",
+    ES_sim, "\n")
+```
+
+```{r}
+cat("The estimated parameters of the gumbel copula,
+    using the maximum likelihood estimate is", gumbel_copula@estimate, "\n",
+    "The estimated parameters of the gaussian copula,
+    using the maximum likelihood estimate is", gauss_copula@estimate, "\n")
+
+gumbel_copula_ktau <- suppressWarnings(fitCopula(gumbelCopula(dim = 4),
+                                                data = uniform_data,
+                                                method = "itau"))
+gauss_copula_ktau <- suppressWarnings(fitCopula(normalCopula(dim = 4),
+                                               data = uniform_data,
+                                               method = "itau"))
+
+cat("The estimated parameters of the gumbel copula, using kendalls tau is",
+    gumbel_copula_ktau@estimate, "\n",
+    "The estimated parameters of the gaussian copula, using kendalls tau is",
+    gauss_copula_ktau@estimate, "\n")
+
+```
+
